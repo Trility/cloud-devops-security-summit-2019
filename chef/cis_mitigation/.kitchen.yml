@@ -1,0 +1,44 @@
+---
+  driver:
+    name: ec2
+    aws_ssh_key_id: chef-test-kitchen-20191020
+    security_group_ids: ["sg-c5c4c6bd"]
+    region: us-west-2
+    subnet_id: subnet-0a873243
+    associate_public_ip: false
+    interface: private
+    tags:
+      Name: test-kitchen-cis-mitigation
+      Owner: "DevOps Group"
+
+  provisioner:
+    name: chef_zero
+
+  transport:
+    ssh_key: ~/.ssh/chef-test-kitchen-20191020
+    connection_timeout: 10
+    connection_retries: 5
+    name: sftp
+
+  platforms:
+    - name: ubuntu-18.04
+      driver:
+        transport:
+          username: ubuntu
+        image_search:
+          owner-id: "099720109477"
+          name: "*ubuntu-bionic-18.04-amd64-server*"
+        block_device_mappings:
+          - device_name: /dev/sda1
+            ebs:
+              volume_type: gp2
+              volume_size: 20
+              delete_on_termination: true
+
+  suites:
+    - name: default
+      provisioner:
+        policyfile: policyfiles/kitchen.rb
+
+  verifier:
+    name: inspec

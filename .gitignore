@@ -7,3 +7,32 @@
 
 # .tfvars files
 *.tfvars
+
+# Secret files
+*.secret
+
+# Swap files
+*.swp
+
+# Lock files
+*.lock
+
+.bundle
+vendor/
+*.log
+.idea/
+
+# Zip files
+*.zip
+*.tar.*
+*.gz
+*.xz
+*.bz2
+
+# .DS_Store
+.DS_Store
+
+# Kitchen directories
+**/.kitchen
+**/*.lock.json
+**/*.lock

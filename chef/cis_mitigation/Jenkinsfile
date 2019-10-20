@@ -1,0 +1,67 @@
+node {
+  try {
+    wrap([$class: 'AnsiColorBuildWrapper']) {
+      timestamps {
+        stage("Checkout") {
+          checkout scm
+        }
+
+        stage("Lint") {
+          sh "foodcritic -f correctness chef/cis_mitigation/"
+          sh "rubocop -r cookstyle chef/cis_mitigation"
+        }
+
+        stage("Spec") {
+          dir ('chef/cis_mitigation') {
+            sh "chef exec rspec"
+          }
+        }
+
+        stage("Kitchen-Create") {
+          dir ('chef/cis_mitigation') {
+            sh "kitchen create"
+          }
+        }
+
+        stage("Kitchen-Converge") {
+          try {
+            dir ('chef/cis_mitigation') {
+	            sh "kitchen converge"
+            }
+          } catch(error) {
+            retry(2) {
+              input "Retry the converge?"
+              dir ('chef/cis_mitigation') {
+                sh "kitchen converge"
+              }
+            }
+          }
+        }
+
+        stage("Kitchen-Verify") {
+          try {
+            dir ('chef/cis_mitigation') {
+              sh "kitchen verify"
+            }
+          } catch(error) {
+            retry(2) {
+              input "Retry the verify?"
+              dir ('chef/cis_mitigation') {
+                sh "kitchen verify"
+              }
+            }
+          }
+        }
+
+        stage("Kitchen-Destroy") {
+          dir ('chef/cis_mitigation') {
+            sh "kitchen destroy"
+          }
+        }
+      }
+    }
+  } catch (e) {
+    currentBuild.result = "FAILED"
+    throw e
+  }
+}
