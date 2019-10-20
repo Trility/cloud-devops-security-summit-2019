@@ -5,4 +5,4 @@ default_source :chef_repo, '../..' do |s|
   s.preferred_for 'cis_mitigation'
 end
 
-run_list 'cis_mitigation'
+run_list 'cis_mitigation', 'cis_mitigation::tmp_mount'

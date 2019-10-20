@@ -1,6 +1,7 @@
 # CIS 1.6.1 Configure SELinux
 describe file('/etc/selinux/config') do
   it { should exist }
+  its('content') { should match(/^SELINUX=enforcing/) }
 end
 
 # CIS 4.3 Ensure logrotate is configured
