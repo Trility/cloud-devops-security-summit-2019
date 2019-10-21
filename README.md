@@ -34,5 +34,4 @@ the appropriate values from your AWS account.
 
 ## Repository Layout
 
-The AMI build process is in the `ami` directory. The Security Group build
-process is in the `security_group` directory.
+The AMI build process is in the `ami` directory.
