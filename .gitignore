@@ -36,3 +36,5 @@ vendor/
 **/.kitchen
 **/*.lock.json
 **/*.lock
+
+**/berks_vendor
