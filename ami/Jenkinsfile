@@ -1,0 +1,166 @@
+node {
+  try {
+    wrap([$class: 'AnsiColorBuildWrapper']) {
+      timestamps {
+        stage("Checkout") {
+          checkout scm
+        }
+
+        stage("Lint") {
+          sh "foodcritic -f correctness ami/cookbooks/ami-builder"
+
+          dir ('ami/cookbooks/ami-builder') {
+            sh "rubocop -r cookstyle ami/cookbooks/ami-builder"
+          }
+        }
+
+        stage("Spec") {
+          dir ('ami/cookbooks/ami-builder') {
+            sh "chef exec rspec"
+          }
+        }
+
+        stage("Integration Kitchen-Create") {
+          dir ('ami/cookbooks/ami-builder') {
+            sh "kitchen create integration-pre-packer-ubuntu-1804"
+          }
+        }
+
+        stage("Integration Kitchen-Converge") {
+          try {
+            dir ('ami/cookbooks/ami-builder') {
+	            sh "kitchen converge integration-pre-packer-ubuntu-1804"
+            }
+          } catch(error) {
+            retry(2) {
+              input "Retry the converge?"
+              dir ('ami/cookbooks/ami-builder') {
+                sh "kitchen converge integration-pre-packer-ubuntu-1804"
+              }
+            }
+          }
+        }
+
+        stage("Integration Kitchen-Verify") {
+          try {
+            dir ('ami/cookbooks/ami-builder') {
+              sh "kitchen verify integration-pre-packer-ubuntu-1804"
+            }
+          } catch(error) {
+            retry(2) {
+              input "Retry the verify?"
+              dir ('ami/cookbooks/ami-builder') {
+                sh "kitchen verify integration-pre-packer-ubuntu-1804"
+              }
+            }
+          }
+        }
+
+        stage("Integration Kitchen-Destroy") {
+          dir ('ami/cookbooks/ami-builder') {
+            sh "kitchen destroy integration-pre-packer-ubuntu-1804"
+          }
+        }
+
+        stage("Berks Vendor Cookbooks") {
+          dir ('ami') {
+            sh "rm -rf berks_vendor/"
+            sh "mkdir -p berks_vendor"
+            sh """
+              for DIR in `ls cookbooks/`; do
+                berks vendor berks_vendor -b cookbooks/\$DIR/Berksfile
+              done
+            """
+          }
+        }
+
+        stage("Validate Packer File") {
+          dir ('ami') {
+            def validateExitCode = sh script: "packer validate -var branch=${env.BRANCH} base_ami.json", returnStatus: true
+            if (validateExitCode != 0) {
+              error("Packer validate failed")
+            }
+          }
+        }
+
+        def amiId = ""
+        stage("Run Packer") {
+          dir ('ami') {
+            sh """
+              { packer build -machine-readable -var branch=${env.BRANCH} base_ami.json; echo "\$?"; } | tee packer_build_output.txt
+              tail -n 1 packer_build_output.txt > packer_exit_code.txt
+              grep "artifact,0,id" packer_build_output.txt | cut -d":" -f 2 > packer_ami_id.txt
+            """
+            packerExitCode = readFile "packer_exit_code.txt"
+            if (packerExitCode.trim() != "0") {
+              error("Packer failed")
+            }
+          }
+          amiId = readFile "packer_ami_id.txt"
+        }
+
+        stage("Functional Kitchen-Create") {
+          dir ('ami/cookbooks/ami-builder') {
+            sh "sed -i 's/===ubuntu-1804ImageId===/${amiId}/g' .kitchen.yml"
+            sh "kitchen create functional-post-packer-ubuntu-1804"
+          }
+        }
+
+        stage("Functional Kitchen-Verify") {
+          try {
+            dir ('ami/cookbooks/ami-builder') {
+              sh "kitchen verify functional-post-packer-ubuntu-1804"
+            }
+          } catch(error) {
+            retry(2) {
+              input "Retry the verify?"
+              dir ('ami/cookbooks/ami-builder') {
+                sh "kitchen verify functional-post-packer-ubuntu-1804"
+              }
+            }
+          }
+        }
+
+        stage("Functional Kitchen-Destroy") {
+          dir ('ami/cookbooks/ami-builder') {
+            sh "kitchen destroy functional-post-packer-ubuntu-1804"
+          }
+        }
+
+        stage("Encrypt AMI") {
+          sh """
+            TAG=\$(date +%Y%m%d%H%M%S)
+            NEW_AMI_ID=\$(aws --region us-west-2 ec2 copy-image \
+                             --source-image-id ${amiId} \
+                             --source-region us-weat-2 \
+                             --name ubuntu-base-ami-${env.BRANCH}-\$TAG \
+                             --description ubuntu-base-ami-${env.BRANCH}-\$TAG \
+                             --encrypted \
+                             --query 'ImageId' \
+                             --output text)
+            aws --region us-west-2 ec2 wait image-available --image-ids \$NEW_AMI_ID
+            echo \$? > copy_ami_result.txt
+            aws --region us-west-2 ec2 create-tags \
+                --resources \$NEW_AMI_ID \
+                --tags \
+                  Key=Name,Value=ubuntu-base-ami-${env.BRANCH}-\$TAG
+          """
+          def copyExitCode = readFile "copy_ami_result.txt"
+          if (copyExitCode.trim() != "0") {
+            error("Failed to create encrypted AMI")
+          }
+        }
+
+        stage("Deregister Unencrypted AMI") {
+          deregisterExitCode = sh script: "aws --region us-west-2 ec2 deregister-image --image-id ${amiId}", returnStatus: true
+          if (deregisterExitCode != 0) {
+            error("Failed to deregister unencrypted AMI: ${amiId}")
+          }
+        }
+      }
+    }
+  } catch (e) {
+    currentBuild.result = "FAILED"
+    throw e
+  }
+}

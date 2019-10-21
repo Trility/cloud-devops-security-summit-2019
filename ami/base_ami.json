@@ -1,0 +1,92 @@
+{
+  "variables": {
+    "branch": "",
+    "chef_version": "15.2.20",
+    "region": "us-west-2",
+    "root_volume_size": "20",
+    "security_group_cidr": "172.16.0.0/16",
+    "sub_accounts": "",
+    "subnet_filter_name": "infra-private-*",
+    "vpc_filter_name": "infra"
+  },
+  "builders": [
+    {
+      "ami_block_device_mappings": [
+        {
+          "device_name": "/dev/sda1",
+          "volume_type": "gp2",
+          "volume_size": "{{user `root_volume_size`}}",
+          "delete_on_termination": true
+        }
+      ],
+      "ami_description": "unencrypted-ubuntu-base-ami-{{user `branch`}}-{{timestamp}}",
+      "ami_name": "unencrypted-ubuntu-base-ami-{{user `branch`}}-{{timestamp}}",
+      "ami_users": "{{user `sub_accounts`}}",
+      "ena_support": true,
+      "instance_type": "t2.medium",
+      "launch_block_device_mappings": [
+        {
+          "device_name": "/dev/sda1",
+          "volume_type": "gp2",
+          "volume_size": "{{user `root_volume_size`}}",
+          "delete_on_termination": true
+        }
+      ],
+      "region": "{{user `region`}}",
+      "run_tags": {
+        "Branch": "{{user `branch`}}",
+        "Name": "packerBuild",
+        "Owner": "DevOps Group"
+      },
+      "shutdown_behavior": "terminate",
+      "source_ami_filter": {
+        "filters": {
+          "name": "*ubuntu-bionic-18.04-amd64-server*",
+          "root-device-type": "ebs",
+          "virtualization-type": "hvm"
+        },
+        "owners": [
+          "099720109477"
+        ],
+        "most_recent": true
+      },
+      "snapshot_users": "{{user `sub_accounts`}}",
+      "ssh_interface": "private_ip",
+      "ssh_username": "ubuntu",
+      "subnet_filter": {
+        "filters": {
+          "tag:Name": "{{user `subnet_filter_name`}}"
+        },
+        "most_free": true,
+        "random": true
+      },
+      "tags": {
+        "Branch": "{{user `branch`}}",
+        "Name": "unencrypted-ubuntu-base-ami-{{user `branch`}}-{{timestamp}}",
+        "Owner": "DevOps Group"
+      },
+      "temporary_security_group_source_cidrs": [
+        "{{user `security_group_cidr`}}"
+      ],
+      "type": "amazon-ebs",
+      "vpc_filter": {
+        "filters": {
+          "tag:Name": "{{user `vpc_filter_name`}}"
+        }
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "cookbook_paths": [
+        "berks_vendor"
+      ],
+      "execute_command": "{{if .Sudo}}sudo {{end}}chef-solo --chef-license accept --no-color -c {{.ConfigPath}} -j {{.JsonPath}}",
+      "install_command": "curl -L https://omnitruck.chef.io/install.sh | {{if .Sudo}}sudo {{end}}bash -s -- -v {{user `chef_version`}}",
+      "run_list": [
+        "ami_builder"
+      ],
+      "type": "chef-solo"
+    }
+  ]
+}

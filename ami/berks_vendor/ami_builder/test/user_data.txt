@@ -1,0 +1,12 @@
+#!/bin/bash -xe
+
+cat >/tmp/testfile.sh <<EOL
+#!/bin/bash
+
+echo "Execute file"
+exit 0
+
+EOL
+
+chmod 755 /tmp/testfile.sh
+cp /tmp/testfile.sh /var/tmp/
